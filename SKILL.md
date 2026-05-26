@@ -1,6 +1,6 @@
 ---
 name: mimir
-description: Use when the user asks to summon Mimir, run a security audit, run a security check, scan for vulnerabilities, asks "am I exposed", "what's my risk", "is this safe", "audit my setup", or types /mimir. Performs a full machine + account security audit covering settings posture (bypass mode, deny rules, hooks, wildcard Read/Edit/Write), secret exposure across git repos under configured scan roots (committed tokens, .env tracking, gitignore gaps), Vercel posture (SSO on cron projects), GitHub posture (public-by-mistake repos), supply chain (npm audit, missing lockfiles), tamper detection on Claude config and skills, installed-skill content inspection (risky patterns, provenance), and credential rotation freshness. Auto-fixes safe items (deny rules, gitignore appends, baseline snapshots); reports risky items (committed secrets, public repos, vulnerable deps, risky skill content) for the user's approval.
+description: Use when the user asks to summon Mimir, run a security audit, run a security check, scan for vulnerabilities, asks "am I exposed", "what's my risk", "is this safe", "audit my setup", or types /mimir. Performs a full machine + account security audit covering settings posture (bypass mode, hooks, wildcard Read/Edit/Write), secret exposure across git repos under configured scan roots (committed tokens, .env tracking, gitignore gaps), Vercel posture (SSO on cron projects), GitHub posture (public-by-mistake repos), supply chain (npm audit, missing lockfiles), tamper detection on Claude config and skills, installed-skill content inspection (risky patterns, provenance), and credential rotation freshness. Auto-fixes safe items (gitignore appends, baseline snapshots); reports risky items (committed secrets, public repos, vulnerable deps, risky skill content) for the user's approval.
 ---
 
 # Mimir
@@ -22,7 +22,7 @@ Do NOT auto-summon Mimir mid-task. Wait for an explicit trigger. Mimir is a deli
 
 | Check | What it looks for | Auto-fix? |
 |---|---|---|
-| `settings` | bypassPermissions state, missing deny rules for catastrophic ops, dangerous additionalDirectories scope, wildcard Read/Edit/Write | Adds missing deny rules to `~/.claude/settings.json` |
+| `settings` | bypassPermissions state, dangerous additionalDirectories scope, wildcard Read/Edit/Write | No — bypass mode is the user's chosen posture; deny rules are not auto-managed |
 | `secrets` | Committed .env / credentials files, plaintext API tokens (Anthropic, OpenAI, GitHub, Vercel, HubSpot, Notion, AWS, Stripe, Slack, Twilio, SendGrid, etc.) in tracked files, gitignore baseline coverage | Appends missing gitignore entries |
 | `vercel` | Cron projects with ssoProtection (silently breaks crons) | No — reports for manual PATCH |
 | `github` | Repos under the user's account that are accidentally public | No — reports for manual review |
@@ -41,7 +41,7 @@ python3 ~/.claude/skills/mimir/scripts/mimir.py --check all --autofix-safe --jso
 
 Flags:
 - `--check` — comma-separated list (`settings,secrets,vercel,github,supply,tamper,skills,rotation`) or `all` (default)
-- `--autofix-safe` — apply non-destructive fixes (deny rules, gitignore appends, initial baseline). Without this, run is read-only.
+- `--autofix-safe` — apply non-destructive fixes (gitignore appends, initial baseline). Without this, run is read-only.
 - `--json` — machine-readable output (what you should request when invoking Mimir from inside Claude Code)
 - `--snapshot-baseline` — overwrite tamper-detection baseline (use AFTER the user confirms a config change was intentional)
 
@@ -109,8 +109,7 @@ If the user wants to skip onboarding ("just run the audit"), proceed to Audit mo
 
 ```
 Mimir's report — 2026-05-26 09:51
-Auto-fixes applied: 3
-  - added 38 deny rules to ~/.claude/settings.json
+Auto-fixes applied: 2
   - appended 4 entries to repo-x/.gitignore
   - wrote initial tamper baseline
 
@@ -152,15 +151,11 @@ INFO (2)
 1. Add a `check_<name>()` function to `scripts/mimir.py` returning `(findings, actions)`.
 2. Register it in the `CHECKS` dict.
 3. Add a row to the "What Mimir Audits" table above.
-4. Add reference data (regex patterns, deny-rule additions, etc.) under `reference/`.
+4. Add reference data (regex patterns, etc.) under `reference/`.
 
 ## Adding a Secret Pattern
 
 Edit `reference/secret_patterns.json` (bundled defaults) or add to `extra_secret_patterns` in `~/.config/mimir/config.json` (user-specific). Each entry needs `name`, `regex`, and `severity` (`critical`, `high`, `medium`, `low`). Test the regex against a real-looking sample value first.
-
-## Adding a Deny Rule
-
-Edit `reference/deny_rules.json`. Next `--autofix-safe` run adds it to `~/.claude/settings.json`.
 
 ## Adding a Trusted Skill Remote
 

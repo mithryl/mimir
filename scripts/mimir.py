@@ -131,29 +131,6 @@ def check_settings(autofix: bool = False) -> tuple[list[dict], list[dict]]:
 
     user_s = _load_json(USER_SETTINGS, {}) or {}
     perms = user_s.get("permissions", {}) if isinstance(user_s, dict) else {}
-    deny = set(perms.get("deny", []) or [])
-
-    canonical = _load_json(REF / "deny_rules.json", {}) or {}
-    needed_deny = set(canonical.get("rules", []))
-
-    missing = sorted(needed_deny - deny)
-    if missing:
-        findings.append(finding(
-            "settings", "high",
-            f"Missing {len(missing)} catastrophic-operation deny rules",
-            "Bypass mode is on (defaultMode=bypassPermissions). Without deny rules, "
-            "destructive ops (rm -rf, force push, vercel rm, etc.) run with no prompt.",
-            "Mimir can add these to ~/.claude/settings.json permissions.deny.",
-            auto_fixable=True,
-            evidence={"missing": missing},
-        ))
-        if autofix:
-            perms.setdefault("deny", [])
-            perms["deny"] = sorted(set(perms["deny"]) | needed_deny)
-            user_s["permissions"] = perms
-            USER_SETTINGS.write_text(json.dumps(user_s, indent=2) + "\n")
-            actions.append({"action": "added_deny_rules", "count": len(missing),
-                           "rules": missing})
 
     if perms.get("defaultMode") == "bypassPermissions":
         findings.append(finding(

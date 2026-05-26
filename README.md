@@ -20,13 +20,13 @@ After installing (see [Install](#install)), open any Claude Code session and pic
 **Walk me through it** — Mimir asks 4 onboarding questions, saves your config, then runs:
 > summon mimir
 
-Either way, you'll see a prioritized findings report. Mimir auto-fixes the safe stuff (deny rules, gitignore baseline, tamper snapshot) and waits for your call on the risky stuff.
+Either way, you'll see a prioritized findings report. Mimir auto-fixes the safe stuff (gitignore baseline, tamper snapshot) and waits for your call on the risky stuff.
 
 ## What it checks
 
 | Check | Looks for | Auto-fix |
 |---|---|---|
-| **settings** | bypassPermissions state, missing deny rules for catastrophic ops, dangerous `additionalDirectories`, wildcard Read/Edit/Write | Adds missing deny rules |
+| **settings** | bypassPermissions state, dangerous `additionalDirectories`, wildcard Read/Edit/Write | Reports |
 | **secrets** | Committed `.env` files, plaintext API tokens (21 patterns: Anthropic, OpenAI, GitHub, Vercel, HubSpot, Notion, AWS, Stripe, Slack, Twilio, SendGrid, etc.), gitignore baseline coverage | Appends gitignore entries |
 | **vercel** | Cron projects with SSO protection (silently breaks crons) | Reports |
 | **github** | Repos under your account that are public when they probably shouldn't be | Reports |
@@ -131,8 +131,6 @@ Mimir will never:
 **Add a check:** define `check_<name>(autofix) -> (findings, actions)` in `scripts/mimir.py`, register in the `CHECKS` dict, document in `SKILL.md` and this README.
 
 **Add a secret pattern:** edit `reference/secret_patterns.json` (PR-able) or `extra_secret_patterns` in your config (personal).
-
-**Add a deny rule:** edit `reference/deny_rules.json`.
 
 **Add a trusted skill remote:** edit `reference/skill_risk_patterns.json` under `trusted_remotes`. Substring match against `git config --get remote.origin.url`.
 
