@@ -1,0 +1,52 @@
+# Mimir-recommended gitignore baseline. Any repo missing these gets them appended on auto-fix.
+
+# Secrets and env
+.env
+.env.*
+!.env.example
+!.env.sample
+credentials.json
+service-account.json
+*.pem
+id_rsa
+id_ed25519
+.npmrc
+.pypirc
+
+# Vercel / deploy artifacts
+.vercel
+.next
+out/
+
+# Build outputs
+dist/
+build/
+target/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE / local-only state
+.vscode/
+.idea/
+*.code-workspace
+
+# Claude Code local auto-memory
+.claude/projects/

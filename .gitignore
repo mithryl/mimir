@@ -1,0 +1,19 @@
+# Personal tamper-detection baselines (per-machine, never share)
+baselines/*.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Local-only Mimir config (lives at ~/.config/mimir/config.json, not in the repo)
+config.json

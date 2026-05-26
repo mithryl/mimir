@@ -1,0 +1,31 @@
+{
+  "description": "Patterns Mimir's skills check looks for in installed skill SKILL.md files and scripts. Matches are flagged for human review.",
+  "patterns": [
+    {"name": "Pipe-to-shell install",          "regex": "(?:curl|wget)\\s+[^|\\n]*\\|\\s*(?:sh|bash|zsh|fish)\\b",                                "severity": "critical"},
+    {"name": "Eval/exec on untrusted input",   "regex": "(?:^|\\s)(?:eval|exec)\\s+[\\\"'`]?\\$",                                                  "severity": "critical"},
+    {"name": "Modifies Claude settings",       "regex": "(?:\\.claude/settings(?:\\.local)?\\.json|~/\\.claude/settings)",                          "severity": "high"},
+    {"name": "Edits user CLAUDE.md",           "regex": "~/\\.claude/CLAUDE\\.md",                                                                  "severity": "high"},
+    {"name": "Reads .env file contents",       "regex": "(?:cat|read|tail|head)\\s+[^|\\n]*\\.env(?:\\s|$|;|\\|)",                                  "severity": "high"},
+    {"name": "Exfiltrates via curl POST",      "regex": "curl\\s+[^\\n]*-X\\s*POST[^\\n]*(?:--data|-d|--data-binary)\\s*['\"]?@",                  "severity": "high"},
+    {"name": "Disables permission prompts",    "regex": "(?:bypassPermissions|skipDangerousModePermissionPrompt|defaultMode)",                      "severity": "medium"},
+    {"name": "Installs hooks",                 "regex": "\"hooks\"\\s*:|SessionStart|PostToolUse|PreToolUse",                                       "severity": "medium"},
+    {"name": "Adds permission allow rules",    "regex": "\"allow\"\\s*:\\s*\\[",                                                                    "severity": "low"},
+    {"name": "Writes to ~/.ssh",               "regex": "~/\\.ssh/",                                                                                "severity": "critical"},
+    {"name": "Writes to ~/.aws",               "regex": "~/\\.aws/(?:credentials|config)",                                                          "severity": "high"},
+    {"name": "Sudo invocation",                "regex": "(?:^|\\s|;|&&|\\|\\|)sudo\\s+",                                                            "severity": "medium"},
+    {"name": "Network listener",               "regex": "(?:nc\\s+-l|ncat\\s+-l|socat\\s+.*LISTEN|python.*SimpleHTTPServer|python.*http\\.server)", "severity": "medium"},
+    {"name": "Reverse shell",                  "regex": "(?:bash\\s+-i\\s+>&|/dev/tcp/|/dev/udp/|mkfifo\\s+.*\\|.*sh)",                            "severity": "critical"}
+  ],
+  "trusted_remotes": [
+    "github.com/anthropics/",
+    "github.com/anthropic-experimental/",
+    "github.com/vercel/",
+    "claude-plugins-official"
+  ],
+  "trusted_skills": [
+    "mimir",
+    "update-config",
+    "keybindings-help",
+    "fewer-permission-prompts"
+  ]
+}
