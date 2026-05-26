@@ -1,6 +1,12 @@
-# Mimir
+<p align="center">
+  <img src="assets/mimir-logo.png" alt="Mimir" width="320" />
+</p>
 
-> Norse god of wisdom whose severed head Odin keeps for counsel. Sees what's lurking in the configuration.
+<h1 align="center">Mimir</h1>
+
+<p align="center"><em>Norse god of wisdom whose severed head Odin keeps for counsel. Sees what's lurking in the configuration.</em></p>
+
+---
 
 A security audit skill for Claude Code environments. Summonable on demand, auto-fixes safe things, reports the rest.
 
