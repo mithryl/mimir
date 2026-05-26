@@ -67,6 +67,33 @@ If no config file exists, Mimir walks `$HOME` looking for git repos. Override th
 
 ## Process
 
+### Routing the invocation
+
+First, decide which mode the user invoked Mimir in:
+
+| User said... | Mode |
+|---|---|
+| "summon mimir and do a full audit" / "/mimir full" / "/mimir audit" / "/mimir all" / any phrasing that explicitly asks for the audit to run | **Audit mode** — skip onboarding, just run |
+| "summon mimir" / "/mimir" alone, with no qualifier | **Maybe onboard** — if `~/.config/mimir/config.json` does not exist, run onboarding first. Otherwise treat as Audit mode. |
+| "/mimir onboard" / "configure mimir" / "set up mimir" | **Onboarding mode** — always run onboarding, even if config exists |
+
+### Onboarding mode
+
+Used the first time a user summons Mimir (no `~/.config/mimir/config.json`) or on explicit request. Goal: build a config in 4 questions or fewer, then offer to run the audit.
+
+1. **Announce.** "First time summoning Mimir — quick 4-question onboarding, then we audit."
+2. **Ask, using AskUserQuestion (one batch):**
+   - Which directories should Mimir scan for git repos? (default: `$HOME` with depth 6)
+   - Any repos that are intentionally public and should be exempted from the GitHub check? (default: none)
+   - Rotation threshold for `.env` files, in days? (default: 180)
+   - Any extra directories to skip during scans (e.g. `vendor`, `third_party`)? (default: none)
+3. **Write `~/.config/mimir/config.json`** with the answers. Create the parent dir if needed.
+4. **Run the audit** in Audit mode using the new config.
+
+If the user wants to skip onboarding ("just run the audit"), proceed to Audit mode without writing the config — Mimir's defaults are sane.
+
+### Audit mode
+
 1. **Announce.** One sentence: "Summoning Mimir — running full audit with safe auto-fixes."
 2. **Run the audit** with `--autofix-safe --json`. Capture the JSON.
 3. **Parse findings**, group by severity (critical → high → medium → low → info), and present a prioritized table. Format:

@@ -10,6 +10,18 @@ A security audit skill for Claude Code environments. Summonable on demand, auto-
 
 Mimir does not block, throttle, or change your workflow. It runs when you call it, prints what it found, and waits.
 
+## Quick start
+
+After installing (see [Install](#install)), open any Claude Code session and pick the style you prefer:
+
+**Just run it** — uses sane defaults, no setup:
+> summon mimir and do a full audit
+
+**Walk me through it** — Mimir asks 4 onboarding questions, saves your config, then runs:
+> summon mimir
+
+Either way, you'll see a prioritized findings report. Mimir auto-fixes the safe stuff (deny rules, gitignore baseline, tamper snapshot) and waits for your call on the risky stuff.
+
 ## What it checks
 
 | Check | Looks for | Auto-fix |
