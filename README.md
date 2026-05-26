@@ -22,7 +22,7 @@ Mimir does not block, throttle, or change your workflow. It runs when you call i
 ## Install
 
 ```bash
-git clone https://github.com/<you>/mimir.git ~/.claude/skills/mimir
+git clone https://github.com/Mithryl-Labs/mimir.git ~/.claude/skills/mimir
 ```
 
 That's it. Claude Code auto-discovers skills under `~/.claude/skills/`. Open any Claude Code session and type `/mimir`.
