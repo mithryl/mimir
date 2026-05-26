@@ -1,6 +1,6 @@
 ---
 name: mimir
-description: Use when the user asks to summon Mimir, run a security audit, run a security check, scan for vulnerabilities, asks "am I exposed", "what's my risk", "is this safe", "audit my setup", or types /mimir. Performs a full machine + account security audit covering settings posture (bypass mode, hooks, wildcard Read/Edit/Write), secret exposure across git repos under configured scan roots (committed tokens, .env tracking, gitignore gaps), Vercel posture (SSO on cron projects), GitHub posture (public-by-mistake repos), supply chain (npm audit, missing lockfiles), tamper detection on Claude config and skills, installed-skill content inspection (risky patterns, provenance), and credential rotation freshness. Auto-fixes safe items (gitignore appends, baseline snapshots); reports risky items (committed secrets, public repos, vulnerable deps, risky skill content) for the user's approval.
+description: Use when the user asks to summon Mimir, run a security audit, run a security check, scan for vulnerabilities, asks "am I exposed", "what's my risk", "is this safe", "audit my setup", or types /mimir. Performs a read-only machine + account security audit covering settings posture (bypass mode, hooks, wildcard Read/Edit/Write), secret exposure across git repos under configured scan roots (committed tokens, .env tracking, gitignore gaps), Vercel posture (SSO on cron projects), GitHub posture (public-by-mistake repos), supply chain (npm audit, missing lockfiles), tamper detection on Claude config and skills, installed-skill content inspection (risky patterns, provenance), and credential rotation freshness. Reports every finding with a specific remediation; never changes anything on disk without the user's explicit say-so.
 ---
 
 # Mimir
@@ -20,30 +20,31 @@ Do NOT auto-summon Mimir mid-task. Wait for an explicit trigger. Mimir is a deli
 
 ## What Mimir Audits
 
-| Check | What it looks for | Auto-fix? |
-|---|---|---|
-| `settings` | bypassPermissions state, dangerous additionalDirectories scope, wildcard Read/Edit/Write | No — bypass mode is the user's chosen posture; deny rules are not auto-managed |
-| `secrets` | Committed .env / credentials files, plaintext API tokens (Anthropic, OpenAI, GitHub, Vercel, HubSpot, Notion, AWS, Stripe, Slack, Twilio, SendGrid, etc.) in tracked files, gitignore baseline coverage | Appends missing gitignore entries |
-| `vercel` | Cron projects with ssoProtection (silently breaks crons) | No — reports for manual PATCH |
-| `github` | Repos under the user's account that are accidentally public | No — reports for manual review |
-| `supply` | npm audit critical/high vulns, missing lockfiles | No — reports for manual `npm audit fix` |
-| `tamper` | Diff of `~/.claude/CLAUDE.md`, settings files, and every SKILL.md against the last-confirmed baseline. Flags unexpected changes that could be prompt-injection persistence | Writes initial baseline; subsequent baselines require user confirmation |
-| `skills` | Inspects every installed skill's SKILL.md and scripts for risky patterns (pipe-to-shell, eval on user input, .env reads, settings tampering, hook installation, reverse-shell shapes) and checks git provenance against a trusted-remote allowlist | No — reports for manual review |
-| `rotation` | `.env` files older than N days (default 180) | No — reports for manual rotation |
+Mimir is **read-only**. Every check reports findings with a specific remediation; nothing is written to disk except via the explicit `--snapshot-baseline` command (which only touches the tamper baseline file).
+
+| Check | What it looks for |
+|---|---|
+| `settings` | bypassPermissions state, dangerous additionalDirectories scope, wildcard Read/Edit/Write |
+| `secrets` | Committed .env / credentials files, plaintext API tokens (Anthropic, OpenAI, GitHub, Vercel, HubSpot, Notion, AWS, Stripe, Slack, Twilio, SendGrid, etc.) in tracked files, gitignore baseline coverage |
+| `vercel` | Cron projects with ssoProtection (silently breaks crons) |
+| `github` | Repos under the user's account that are accidentally public |
+| `supply` | npm audit critical/high vulns, missing lockfiles |
+| `tamper` | Diff of `~/.claude/CLAUDE.md`, settings files, and every SKILL.md against the last-confirmed baseline. Flags unexpected changes that could be prompt-injection persistence |
+| `skills` | Inspects every installed skill's SKILL.md and scripts for risky patterns (pipe-to-shell, eval on user input, .env reads, settings tampering, hook installation, reverse-shell shapes) and checks git provenance against a trusted-remote allowlist |
+| `rotation` | `.env` files older than N days (default 180) |
 
 ## How to Run It
 
 The audit logic lives in `scripts/mimir.py`. Default invocation:
 
 ```bash
-python3 ~/.claude/skills/mimir/scripts/mimir.py --check all --autofix-safe --json
+python3 ~/.claude/skills/mimir/scripts/mimir.py --check all --json
 ```
 
 Flags:
 - `--check` — comma-separated list (`settings,secrets,vercel,github,supply,tamper,skills,rotation`) or `all` (default)
-- `--autofix-safe` — apply non-destructive fixes (gitignore appends, initial baseline). Without this, run is read-only.
 - `--json` — machine-readable output (what you should request when invoking Mimir from inside Claude Code)
-- `--snapshot-baseline` — overwrite tamper-detection baseline (use AFTER the user confirms a config change was intentional)
+- `--snapshot-baseline` — write the tamper-detection baseline. The only write operation Mimir performs; only run after the user explicitly confirms.
 
 ## Configuration
 
@@ -94,24 +95,20 @@ If the user wants to skip onboarding ("just run the audit"), proceed to Audit mo
 
 ### Audit mode
 
-1. **Announce.** One sentence: "Summoning Mimir — running full audit with safe auto-fixes."
-2. **Run the audit** with `--autofix-safe --json`. Capture the JSON.
+1. **Announce.** One sentence: "Summoning Mimir — running read-only audit."
+2. **Run the audit** with `--json`. Capture the JSON. Do not pass any flag that would write to disk.
 3. **Parse findings**, group by severity (critical → high → medium → low → info), and present a prioritized table. Format:
    - Severity badge
    - Short title
    - One-line detail
    - Specific remediation (file path, exact command, etc.)
-4. **Surface the auto-fixes that were applied** in a separate, smaller section: "Mimir fixed N things automatically — here they are."
-5. **Wait for the user's call on the risky items.** Do not auto-remediate critical/high findings. For each one, offer the specific next step and let the user choose.
-6. **Re-baseline only on request.** If the user confirms that flagged tamper-changes were intentional, run `--snapshot-baseline` to update.
+4. **Wait for the user's call on every finding.** Mimir never changes anything on disk. For each finding, present the remediation and let the user choose whether to apply it. Group small batches of similar items (e.g. "the same missing gitignore entry across 10 repos") so they can be approved or skipped as a set.
+5. **Re-baseline only on explicit request.** If the user confirms that flagged tamper-changes were intentional, run `--snapshot-baseline` to update.
 
 ## Output Shape
 
 ```
 Mimir's report — 2026-05-26 09:51
-Auto-fixes applied: 2
-  - appended 4 entries to repo-x/.gitignore
-  - wrote initial tamper baseline
 
 CRITICAL (2)
   [secrets] HubSpot access token in tracked file
@@ -137,14 +134,15 @@ INFO (2)
 
 ## Hard Rules
 
-1. **Never auto-rotate credentials.** Rotation breaks every consumer of that token; only the user can sequence that.
-2. **Never auto-rewrite git history.** `git filter-repo` is destructive and forces every collaborator to re-clone. Report-only.
-3. **Never auto-PATCH Vercel projects.** Mistaken SSO toggles can expose internal dashboards.
-4. **Never auto-change repo visibility.** Public/private is a deliberate business decision.
-5. **Never auto-apply `npm audit fix`.** Major-version bumps can break the build.
-6. **Never auto-uninstall a skill.** A risky-pattern flag is a prompt for the user to look, not a verdict.
-7. **Always re-read the baseline before re-snapshotting.** A baseline written during a compromised session locks the compromise in.
-8. **Use the JSON output when invoking from a Claude session.** Human output is for terminal use.
+1. **Mimir is read-only.** The only write operation is `--snapshot-baseline`, and only when the user explicitly asks for it. Never run the script with any flag that would mutate disk.
+2. **Never auto-rotate credentials.** Rotation breaks every consumer of that token; only the user can sequence that.
+3. **Never auto-rewrite git history.** `git filter-repo` is destructive and forces every collaborator to re-clone. Report-only.
+4. **Never auto-PATCH Vercel projects.** Mistaken SSO toggles can expose internal dashboards.
+5. **Never auto-change repo visibility.** Public/private is a deliberate business decision.
+6. **Never auto-apply `npm audit fix`.** Major-version bumps can break the build.
+7. **Never auto-uninstall a skill.** A risky-pattern flag is a prompt for the user to look, not a verdict.
+8. **Always re-read the baseline before re-snapshotting.** A baseline written during a compromised session locks the compromise in.
+9. **Use the JSON output when invoking from a Claude session.** Human output is for terminal use.
 
 ## Adding a Check
 

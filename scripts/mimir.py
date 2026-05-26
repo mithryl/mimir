@@ -3,14 +3,14 @@
 Mimir — security audit skill for Claude Code environments.
 
 Usage:
-    mimir.py --check all [--autofix-safe] [--json]
+    mimir.py --check all [--json]
     mimir.py --check settings,secrets [--json]
     mimir.py --check vercel
     mimir.py --snapshot-baseline
 
-Always read-only by default. --autofix-safe applies the small set of
-non-destructive fixes (deny-rule additions, gitignore appends, baseline
-snapshots). Risky findings are always report-only.
+Read-only. All findings are reported with exact remediation commands;
+nothing is changed without the user explicitly running --snapshot-baseline
+(which is the only write operation, and only touches the tamper baseline).
 
 Configuration (optional):
     Reads ~/.config/mimir/config.json or $MIMIR_CONFIG. Recognised keys:
@@ -262,19 +262,9 @@ def check_secrets(autofix: bool = False) -> tuple[list[dict], list[dict]]:
             "secrets", "medium",
             f"{Path(repo).name}: .gitignore missing {len(missing)} baseline entries",
             f"Repo: {repo}",
-            "Mimir can append the missing entries.",
-            auto_fixable=True,
+            f"Append the missing entries to {gi_path}. See evidence.missing for the list.",
             evidence={"repo": str(repo), "missing": missing[:20]},
         ))
-        if autofix:
-            with gi_path.open("a") as f:
-                if existing and not existing[-1].strip() == "":
-                    f.write("\n")
-                f.write("\n# Added by Mimir\n")
-                for ln in missing:
-                    f.write(ln + "\n")
-            actions.append({"action": "appended_gitignore",
-                           "repo": str(repo), "count": len(missing)})
 
     return findings, actions
 
@@ -421,13 +411,11 @@ def check_tamper(autofix: bool = False) -> tuple[list[dict], list[dict]]:
     if not snapshot.exists():
         findings.append(finding(
             "tamper", "info",
-            "No baseline yet — creating one now",
-            "Future runs compare ~/.claude/CLAUDE.md, settings.json, settings.local.json, "
-            "and the contents of ~/.claude/skills + ~/.agents/skills against this snapshot.",
-            auto_fixable=True,
+            "No tamper baseline yet",
+            "Future runs will compare ~/.claude/CLAUDE.md, settings.json, settings.local.json, "
+            "and ~/.claude/skills + ~/.agents/skills against a baseline.",
+            "Run `python3 ~/.claude/skills/mimir/scripts/mimir.py --snapshot-baseline` to create one.",
         ))
-        snapshot.write_text(json.dumps(current, indent=2))
-        actions.append({"action": "wrote_baseline", "path": str(snapshot)})
         return findings, actions
 
     baseline = _load_json(snapshot, {}) or {}
@@ -646,15 +634,13 @@ CHECKS = {
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Mimir security audit")
+    ap = argparse.ArgumentParser(description="Mimir security audit (read-only)")
     ap.add_argument("--check", default="all",
                     help="comma-separated: " + ",".join(CHECKS) + ",all")
-    ap.add_argument("--autofix-safe", action="store_true",
-                    help="Apply only the small set of safe fixes (deny rules, gitignore appends, baseline snapshot)")
     ap.add_argument("--json", action="store_true",
                     help="Emit machine-readable JSON instead of human text")
     ap.add_argument("--snapshot-baseline", action="store_true",
-                    help="Just write a fresh tamper-detection baseline and exit")
+                    help="Write a fresh tamper-detection baseline and exit (the only write operation)")
     args = ap.parse_args()
 
     if args.snapshot_baseline:
@@ -665,11 +651,9 @@ def main() -> int:
                  else [c.strip() for c in args.check.split(",") if c.strip() in CHECKS])
 
     all_findings: list[dict] = []
-    all_actions: list[dict] = []
     for c in requested:
-        f, a = CHECKS[c](autofix=args.autofix_safe)
+        f, _ = CHECKS[c](autofix=False)
         all_findings.extend(f)
-        all_actions.extend(a)
 
     all_findings.sort(key=lambda x: SEV_ORDER.get(x["severity"], 9))
 
@@ -677,21 +661,13 @@ def main() -> int:
         print(json.dumps({
             "ran_at": _dt.datetime.now().isoformat(timespec="seconds"),
             "checks": requested,
-            "autofix_applied": args.autofix_safe,
             "findings": all_findings,
-            "actions": all_actions,
         }, indent=2))
         return 0
 
     # Human report
     print(f"Mimir audit — {_dt.datetime.now():%Y-%m-%d %H:%M}")
-    print(f"Checks: {', '.join(requested)}")
-    print(f"Auto-fix applied: {args.autofix_safe}\n")
-    if all_actions:
-        print(f"== Auto-fixes applied ({len(all_actions)}) ==")
-        for a in all_actions:
-            print(f"  - {a}")
-        print()
+    print(f"Checks: {', '.join(requested)}\n")
     if not all_findings:
         print("No findings. Mimir sees nothing amiss.")
         return 0

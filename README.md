@@ -6,7 +6,7 @@
 
 ---
 
-A security audit skill for Claude Code environments. Summonable on demand, auto-fixes safe things, reports the rest.
+A read-only security audit skill for Claude Code environments. Summonable on demand, reports findings with exact remediations, never touches disk without your explicit say-so.
 
 Mimir does not block, throttle, or change your workflow. It runs when you call it, prints what it found, and waits.
 
@@ -20,20 +20,20 @@ After installing (see [Install](#install)), open any Claude Code session and pic
 **Walk me through it** — Mimir asks 4 onboarding questions, saves your config, then runs:
 > summon mimir
 
-Either way, you'll see a prioritized findings report. Mimir auto-fixes the safe stuff (gitignore baseline, tamper snapshot) and waits for your call on the risky stuff.
+Either way, you'll see a prioritized findings report. Mimir is **read-only** — every finding includes the exact remediation, but Mimir never writes to disk or changes settings without your explicit say-so.
 
 ## What it checks
 
-| Check | Looks for | Auto-fix |
-|---|---|---|
-| **settings** | bypassPermissions state, dangerous `additionalDirectories`, wildcard Read/Edit/Write | Reports |
-| **secrets** | Committed `.env` files, plaintext API tokens (21 patterns: Anthropic, OpenAI, GitHub, Vercel, HubSpot, Notion, AWS, Stripe, Slack, Twilio, SendGrid, etc.), gitignore baseline coverage | Appends gitignore entries |
-| **vercel** | Cron projects with SSO protection (silently breaks crons) | Reports |
-| **github** | Repos under your account that are public when they probably shouldn't be | Reports |
-| **supply** | `npm audit` critical/high vulns, missing lockfiles | Reports |
-| **tamper** | Diffs `~/.claude/CLAUDE.md`, `settings.json`, and every installed `SKILL.md` against a baseline. Flags persistence vectors. | Writes initial baseline |
-| **skills** | Inspects every installed skill's `SKILL.md` and scripts for risky patterns (pipe-to-shell, eval, `.env` reads, settings tampering, reverse-shell shapes) and checks git provenance | Reports |
-| **rotation** | `.env` files older than N days (default 180) | Reports |
+| Check | Looks for |
+|---|---|
+| **settings** | bypassPermissions state, dangerous `additionalDirectories`, wildcard Read/Edit/Write |
+| **secrets** | Committed `.env` files, plaintext API tokens (21 patterns: Anthropic, OpenAI, GitHub, Vercel, HubSpot, Notion, AWS, Stripe, Slack, Twilio, SendGrid, etc.), gitignore baseline coverage |
+| **vercel** | Cron projects with SSO protection (silently breaks crons) |
+| **github** | Repos under your account that are public when they probably shouldn't be |
+| **supply** | `npm audit` critical/high vulns, missing lockfiles |
+| **tamper** | Diffs `~/.claude/CLAUDE.md`, `settings.json`, and every installed `SKILL.md` against a baseline. Flags persistence vectors. |
+| **skills** | Inspects every installed skill's `SKILL.md` and scripts for risky patterns (pipe-to-shell, eval, `.env` reads, settings tampering, reverse-shell shapes) and checks git provenance |
+| **rotation** | `.env` files older than N days (default 180) |
 
 ## Install
 
@@ -63,8 +63,8 @@ Or trigger phrases: "summon mimir", "run a security audit", "am I exposed", "wha
 Direct CLI invocation (for cron jobs, CI, terminal use):
 
 ```bash
-# Default: run all checks, apply safe auto-fixes, human-readable output
-python3 ~/.claude/skills/mimir/scripts/mimir.py --check all --autofix-safe
+# Default: run all checks, read-only, human-readable output
+python3 ~/.claude/skills/mimir/scripts/mimir.py --check all
 
 # JSON for programmatic consumers
 python3 ~/.claude/skills/mimir/scripts/mimir.py --check all --json
@@ -72,7 +72,7 @@ python3 ~/.claude/skills/mimir/scripts/mimir.py --check all --json
 # Specific checks only
 python3 ~/.claude/skills/mimir/scripts/mimir.py --check secrets,supply
 
-# Re-baseline tamper detection after confirming a config change was intentional
+# Write the tamper-detection baseline (the only write operation)
 python3 ~/.claude/skills/mimir/scripts/mimir.py --snapshot-baseline
 ```
 
@@ -118,17 +118,18 @@ Mimir reads `~/.config/mimir/config.json` if it exists, otherwise uses sensible 
 
 Mimir will never:
 
-1. Auto-rotate credentials — rotation breaks every consumer, only you can sequence that.
-2. Auto-rewrite git history — destructive, forces every collaborator to re-clone.
-3. Auto-PATCH Vercel projects — mistaken toggles can expose internal dashboards.
-4. Auto-change repo visibility — public/private is a deliberate business decision.
-5. Auto-apply `npm audit fix` — major-version bumps can break the build.
-6. Auto-uninstall a skill — risky-pattern flags prompt you to look, not Mimir to verdict.
-7. Re-baseline tamper detection without explicit `--snapshot-baseline` — a baseline written during a compromised session locks the compromise in.
+1. Write to disk except via the explicit `--snapshot-baseline` command — and even then, only the tamper baseline file.
+2. Auto-rotate credentials — rotation breaks every consumer, only you can sequence that.
+3. Auto-rewrite git history — destructive, forces every collaborator to re-clone.
+4. Auto-PATCH Vercel projects — mistaken toggles can expose internal dashboards.
+5. Auto-change repo visibility — public/private is a deliberate business decision.
+6. Auto-apply `npm audit fix` — major-version bumps can break the build.
+7. Auto-uninstall a skill — risky-pattern flags prompt you to look, not Mimir to verdict.
+8. Modify your settings.json, deny rules, .gitignore files, or anything else — every remediation is reported with the exact command for you to run.
 
 ## Extend
 
-**Add a check:** define `check_<name>(autofix) -> (findings, actions)` in `scripts/mimir.py`, register in the `CHECKS` dict, document in `SKILL.md` and this README.
+**Add a check:** define `check_<name>() -> (findings, [])` in `scripts/mimir.py`, register in the `CHECKS` dict, document in `SKILL.md` and this README. Checks must be pure functions — no disk writes, no network mutations.
 
 **Add a secret pattern:** edit `reference/secret_patterns.json` (PR-able) or `extra_secret_patterns` in your config (personal).
 
