@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import fnmatch
 import hashlib
 import json
 import os
@@ -248,21 +249,24 @@ def check_secrets(autofix: bool = False) -> tuple[list[dict], list[dict]]:
                 ))
                 break
 
-    # 3) gitignore baseline coverage
+    # 3) gitignore baseline coverage — consults local + global, glob-aware
+    global_patterns = _get_global_gitignore_patterns()
+    baseline_entries = [ln for ln in gi_baseline
+                        if ln.strip() and not ln.startswith("#")]
     for repo in repos:
         gi_path = repo / ".gitignore"
         existing = gi_path.read_text().splitlines() if gi_path.exists() else []
-        existing_set = {ln.strip() for ln in existing if ln.strip() and not ln.startswith("#")}
-        baseline_entries = [ln for ln in gi_baseline
-                            if ln.strip() and not ln.startswith("#")]
-        missing = [ln for ln in baseline_entries if ln not in existing_set]
+        local_set = {ln.strip() for ln in existing if ln.strip() and not ln.startswith("#")}
+        combined = local_set | global_patterns
+        missing = [ln for ln in baseline_entries if not _gitignore_covers(combined, ln)]
         if not missing:
             continue
         findings.append(finding(
             "secrets", "medium",
             f"{Path(repo).name}: .gitignore missing {len(missing)} baseline entries",
             f"Repo: {repo}",
-            f"Append the missing entries to {gi_path}. See evidence.missing for the list.",
+            f"Append the missing entries to {gi_path}. See evidence.missing for the list. "
+            f"(Patterns covered by your global gitignore are not flagged.)",
             evidence={"repo": str(repo), "missing": missing[:20]},
         ))
 
@@ -470,6 +474,74 @@ def check_rotation(autofix: bool = False) -> tuple[list[dict], list[dict]]:
 
 
 # ---------- helpers ----------
+_GLOBAL_GITIGNORE_CACHE: set[str] | None = None
+
+
+def _get_global_gitignore_patterns() -> set[str]:
+    """Read patterns from git's global excludes file(s).
+
+    Sources checked, in order:
+      1. The path in `git config --global core.excludesfile`
+      2. The XDG default `~/.config/git/ignore`
+    Both are merged (Git itself only reads core.excludesfile, but the XDG
+    file is the macOS/Linux default if no override is set, and many users
+    have content in both).
+    """
+    global _GLOBAL_GITIGNORE_CACHE
+    if _GLOBAL_GITIGNORE_CACHE is not None:
+        return _GLOBAL_GITIGNORE_CACHE
+    patterns: set[str] = set()
+    paths_to_try: list[Path] = []
+    code, out, _ = _sh(["git", "config", "--global", "--get", "core.excludesfile"], timeout=5)
+    if code == 0 and out.strip():
+        paths_to_try.append(Path(out.strip()).expanduser())
+    paths_to_try.append(HOME / ".config" / "git" / "ignore")
+    seen: set[Path] = set()
+    for p in paths_to_try:
+        try:
+            rp = p.resolve()
+        except OSError:
+            continue
+        if rp in seen or not p.exists() or not p.is_file():
+            continue
+        seen.add(rp)
+        try:
+            for ln in p.read_text().splitlines():
+                s = ln.strip()
+                if s and not s.startswith("#"):
+                    patterns.add(s)
+        except OSError:
+            continue
+    _GLOBAL_GITIGNORE_CACHE = patterns
+    return patterns
+
+
+def _gitignore_covers(existing_patterns: set[str], entry: str) -> bool:
+    """Return True if any pattern in `existing_patterns` would cover `entry`.
+
+    Coverage rules:
+      - Negation entries (starting with `!`) must match literally — wildcard
+        match doesn't make sense for negations.
+      - Comments and blank lines in existing_patterns are ignored.
+      - A pattern P covers entry E if E matches P as a shell glob, after
+        normalizing leading/trailing slashes off both sides.
+    """
+    if entry.startswith("!"):
+        return entry in existing_patterns
+    target = entry.lstrip("/").rstrip("/")
+    for pat in existing_patterns:
+        if not pat or pat.startswith("#") or pat.startswith("!"):
+            continue
+        if pat == entry:
+            return True
+        norm = pat.lstrip("/").rstrip("/")
+        if norm == target:
+            return True
+        if fnmatch.fnmatchcase(target, norm):
+            return True
+    return False
+
+
 def _find_git_repos(root: Path, max_depth: int = 6,
                     extra_skip: set[str] | None = None) -> list[Path]:
     repos: list[Path] = []
