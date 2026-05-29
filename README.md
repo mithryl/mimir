@@ -1,6 +1,5 @@
 <p align="center">
   <img src="assets/mimir-logo.png" alt="Mimir" width="320" />
-</p>
 
 <h1 align="center">Mimir</h1>
 
