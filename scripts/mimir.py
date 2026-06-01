@@ -405,6 +405,72 @@ def check_supply(autofix: bool = False) -> tuple[list[dict], list[dict]]:
     return findings, []
 
 
+# ---------- check: cooldown ----------
+# Defense against self-propagating npm/PyPI worms (Shai-Hulud-style). These
+# steal npm/GitHub tokens during `install` and republish themselves into the
+# victim's own packages within minutes of a compromised version going live.
+# The industry mitigation is a quarantine window: refuse to install package
+# versions younger than ~7 days, so the ecosystem catches and yanks the
+# malware before it reaches your machine. This check verifies such a policy
+# is configured; it does not detect an active compromise.
+COOLDOWN_DAYS = 7
+COOLDOWN_RE = re.compile(r"minimum[_-]?release[_-]?age", re.IGNORECASE)
+
+
+def _has_cooldown(path: Path) -> bool:
+    try:
+        return bool(COOLDOWN_RE.search(path.read_text(errors="ignore")))
+    except OSError:
+        return False
+
+
+def check_cooldown(autofix: bool = False) -> tuple[list[dict], list[dict]]:
+    findings: list[dict] = []
+    minutes = COOLDOWN_DAYS * 24 * 60
+
+    # A global ~/.npmrc cooldown covers every install on the machine.
+    if _has_cooldown(HOME / ".npmrc"):
+        return findings, []
+
+    # Otherwise look for per-project policies under the scan roots.
+    user_cfg = load_config()
+    repos: list[Path] = []
+    for root in user_cfg["scan_roots"]:
+        repos.extend(_find_git_repos(root, max_depth=user_cfg["max_walk_depth"]))
+
+    js_repos = [r for r in repos if (r / "package.json").exists()]
+    protected = [
+        r for r in js_repos
+        if _has_cooldown(r / ".npmrc") or _has_cooldown(r / "pnpm-workspace.yaml")
+    ]
+    unprotected = [r for r in js_repos if r not in protected]
+
+    if not js_repos:
+        # No JS projects and no global policy — nothing actionable to flag.
+        return findings, []
+
+    if unprotected:
+        detail = (
+            f"No install-cooldown policy found (global ~/.npmrc has none; "
+            f"{len(unprotected)} of {len(js_repos)} JS project(s) unprotected). "
+            "Self-propagating npm worms republish stolen-token payloads within "
+            "minutes of a version going live; a release-age window lets the "
+            "ecosystem catch and yank them first."
+        )
+        findings.append(finding(
+            "cooldown", "medium",
+            f"No package-install cooldown configured (recommend {COOLDOWN_DAYS}-day window)",
+            detail,
+            f"Set a minimum release age of {minutes} minutes (~{COOLDOWN_DAYS} days). "
+            f"Global pnpm/npm: add `minimum-release-age={minutes}` to ~/.npmrc "
+            f"(pnpm 10.16+; npm 11.6+ uses `npm config set minimumReleaseAge {minutes}`). "
+            "Until configured, avoid installing package updates younger than "
+            f"~{COOLDOWN_DAYS} days.",
+            evidence={"unprotected_repos": [str(r) for r in unprotected]},
+        ))
+    return findings, []
+
+
 # ---------- check: tamper ----------
 def check_tamper(autofix: bool = False) -> tuple[list[dict], list[dict]]:
     findings: list[dict] = []
@@ -699,6 +765,7 @@ CHECKS = {
     "vercel": check_vercel,
     "github": check_github,
     "supply": check_supply,
+    "cooldown": check_cooldown,
     "tamper": check_tamper,
     "rotation": check_rotation,
     "skills": check_skills,
@@ -709,6 +776,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Mimir security audit (read-only)")
     ap.add_argument("--check", default="all",
                     help="comma-separated: " + ",".join(CHECKS) + ",all")
+    ap.add_argument("--path", action="append", default=None, metavar="DIR",
+                    help="Scope this run to one or more specific folders (repeatable). "
+                         "Overrides scan_roots from config for repo-walking checks.")
     ap.add_argument("--json", action="store_true",
                     help="Emit machine-readable JSON instead of human text")
     ap.add_argument("--snapshot-baseline", action="store_true",
@@ -718,6 +788,18 @@ def main() -> int:
     if args.snapshot_baseline:
         snapshot_baseline()
         return 0
+
+    # --path scopes the repo-walking checks to specific folders for this run.
+    # load_config() returns a cached dict by reference, so mutating scan_roots
+    # here propagates to every check that reads it.
+    if args.path:
+        scoped = [Path(p).expanduser() for p in args.path]
+        missing = [p for p in scoped if not p.exists()]
+        if missing:
+            print("Path(s) not found: " + ", ".join(str(p) for p in missing),
+                  file=sys.stderr)
+            return 2
+        load_config()["scan_roots"] = scoped
 
     requested = (list(CHECKS.keys()) if args.check == "all"
                  else [c.strip() for c in args.check.split(",") if c.strip() in CHECKS])

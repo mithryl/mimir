@@ -29,6 +29,7 @@ Either way, you'll see a prioritized findings report. Mimir is **read-only** —
 | **vercel** | Cron projects with SSO protection (silently breaks crons) |
 | **github** | Repos under your account that are public when they probably shouldn't be |
 | **supply** | `npm audit` critical/high vulns, missing lockfiles |
+| **cooldown** | Missing package-install cooldown policy (no `minimumReleaseAge` window). Defense against self-propagating npm/PyPI worms that steal tokens and republish themselves minutes after a version goes live. |
 | **tamper** | Diffs `~/.claude/CLAUDE.md`, `settings.json`, and every installed `SKILL.md` against a baseline. Flags persistence vectors. |
 | **skills** | Inspects every installed skill's `SKILL.md` and scripts for risky patterns (pipe-to-shell, eval, `.env` reads, settings tampering, reverse-shell shapes) and checks git provenance |
 | **rotation** | `.env` files older than N days (default 180) |
@@ -69,6 +70,10 @@ python3 ~/.claude/skills/mimir/scripts/mimir.py --check all --json
 
 # Specific checks only
 python3 ~/.claude/skills/mimir/scripts/mimir.py --check secrets,supply
+
+# Scope a run to one folder instead of the whole machine (repeatable)
+python3 ~/.claude/skills/mimir/scripts/mimir.py --path ~/projects/my-app
+python3 ~/.claude/skills/mimir/scripts/mimir.py --path ~/projects/a --path ~/projects/b
 
 # Write the tamper-detection baseline (the only write operation)
 python3 ~/.claude/skills/mimir/scripts/mimir.py --snapshot-baseline

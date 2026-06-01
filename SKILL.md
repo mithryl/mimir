@@ -1,6 +1,6 @@
 ---
 name: mimir
-description: Use when the user asks to summon Mimir, run a security audit, run a security check, scan for vulnerabilities, asks "am I exposed", "what's my risk", "is this safe", "audit my setup", or types /mimir. Performs a read-only machine + account security audit covering settings posture (bypass mode, hooks, wildcard Read/Edit/Write), secret exposure across git repos under configured scan roots (committed tokens, .env tracking, gitignore gaps), Vercel posture (SSO on cron projects), GitHub posture (public-by-mistake repos), supply chain (npm audit, missing lockfiles), tamper detection on Claude config and skills, installed-skill content inspection (risky patterns, provenance), and credential rotation freshness. Reports every finding with a specific remediation; never changes anything on disk without the user's explicit say-so.
+description: Use when the user asks to summon Mimir, run a security audit, run a security check, scan for vulnerabilities, asks "am I exposed", "what's my risk", "is this safe", "audit my setup", or types /mimir. Performs a read-only machine + account security audit covering settings posture (bypass mode, hooks, wildcard Read/Edit/Write), secret exposure across git repos under configured scan roots (committed tokens, .env tracking, gitignore gaps), Vercel posture (SSO on cron projects), GitHub posture (public-by-mistake repos), supply chain (npm audit, missing lockfiles, install-cooldown policy against self-propagating package worms), tamper detection on Claude config and skills, installed-skill content inspection (risky patterns, provenance), and credential rotation freshness. Reports every finding with a specific remediation; never changes anything on disk without the user's explicit say-so.
 ---
 
 # Mimir
@@ -29,6 +29,7 @@ Mimir is **read-only**. Every check reports findings with a specific remediation
 | `vercel` | Cron projects with ssoProtection (silently breaks crons) |
 | `github` | Repos under the user's account that are accidentally public |
 | `supply` | npm audit critical/high vulns, missing lockfiles |
+| `cooldown` | Missing package-install cooldown policy (no `minimumReleaseAge` window) — defense against self-propagating npm/PyPI worms that republish stolen-token payloads minutes after a version goes live |
 | `tamper` | Diff of `~/.claude/CLAUDE.md`, settings files, and every SKILL.md against the last-confirmed baseline. Flags unexpected changes that could be prompt-injection persistence |
 | `skills` | Inspects every installed skill's SKILL.md and scripts for risky patterns (pipe-to-shell, eval on user input, .env reads, settings tampering, hook installation, reverse-shell shapes) and checks git provenance against a trusted-remote allowlist |
 | `rotation` | `.env` files older than N days (default 180) |
@@ -42,7 +43,8 @@ python3 ~/.claude/skills/mimir/scripts/mimir.py --check all --json
 ```
 
 Flags:
-- `--check` — comma-separated list (`settings,secrets,vercel,github,supply,tamper,skills,rotation`) or `all` (default)
+- `--check` — comma-separated list (`settings,secrets,vercel,github,supply,cooldown,tamper,skills,rotation`) or `all` (default)
+- `--path DIR` — scope this run to one or more specific folders (repeatable), overriding `scan_roots` from config. Use when the user points Mimir at a single project instead of the whole machine. Exits non-zero if a path doesn't exist. Does not affect machine-wide checks (`settings`, `tamper`, `skills`) which always inspect Claude config.
 - `--json` — machine-readable output (what you should request when invoking Mimir from inside Claude Code)
 - `--snapshot-baseline` — write the tamper-detection baseline. The only write operation Mimir performs; only run after the user explicitly confirms.
 
@@ -96,7 +98,7 @@ If the user wants to skip onboarding ("just run the audit"), proceed to Audit mo
 ### Audit mode
 
 1. **Announce.** One sentence: "Summoning Mimir — running read-only audit."
-2. **Run the audit** with `--json`. Capture the JSON. Do not pass any flag that would write to disk.
+2. **Run the audit** with `--json`. Capture the JSON. Do not pass any flag that would write to disk. If the user pointed Mimir at a specific folder ("scan this repo", "audit ~/projects/foo"), pass `--path <folder>` to scope the repo-walking checks to just that folder instead of the whole machine.
 3. **Parse findings**, group by severity (critical → high → medium → low → info), and present a prioritized table. Format:
    - Severity badge
    - Short title
