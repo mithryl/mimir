@@ -4,9 +4,9 @@
 
 ---
 
-A read-only security audit skill for Claude Code environments. Summonable on demand, reports findings with exact remediations, never touches disk without your explicit say-so.
+A security audit skill for Claude Code environments. Mimir audits two surfaces on demand: your **machine and accounts** (settings, secrets, Vercel/GitHub posture, supply chain, tamper, installed skills) and a **project's source code** (security, performance, UI/UX). It reports findings with exact remediations and never changes anything without your explicit say-so.
 
-Mimir does not block, throttle, or change your workflow. It runs when you call it, prints what it found, and waits.
+Mimir does not block, throttle, or change your workflow. It runs when you call it, reports what it found, and waits. The environment audit is fully read-only; app-code fixes happen only when you opt in, on a dedicated branch.
 
 ## Quick start
 
@@ -51,7 +51,7 @@ The checklists live as editable data in `reference/app_checks/`; add or change a
 ## Install
 
 ```bash
-git clone https://github.com/Mithryl-Labs/mimir.git ~/.claude/skills/mimir
+git clone https://github.com/mithryl/mimir.git ~/.claude/skills/mimir
 ```
 
 That's it. Claude Code auto-discovers skills under `~/.claude/skills/`. Open any Claude Code session and type `/mimir`.
