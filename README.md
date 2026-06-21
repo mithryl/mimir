@@ -2,6 +2,10 @@
   <img src="assets/mimir-logo.png" alt="Mimir" width="320" />
 <h1 align="center">Mimir</h1>
 
+<p align="center">
+  <a href="https://github.com/sponsors/mithryl"><img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white" alt="Sponsor mithryl" /></a>
+</p>
+
 ---
 
 A security audit skill for Claude Code environments. Mimir audits two surfaces on demand: your **machine and accounts** (settings, secrets, Vercel/GitHub posture, supply chain, tamper, installed skills) and a **project's source code** (security, performance, UI/UX). It reports findings with exact remediations and never changes anything without your explicit say-so.
