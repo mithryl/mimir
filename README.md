@@ -34,6 +34,20 @@ Either way, you'll see a prioritized findings report. Mimir is **read-only** —
 | **skills** | Inspects every installed skill's `SKILL.md` and scripts for risky patterns (pipe-to-shell, eval, `.env` reads, settings tampering, reverse-shell shapes) and checks git provenance |
 | **rotation** | `.env` files older than N days (default 180) |
 
+## App audits (project code)
+
+Beyond the machine/account audit above, Mimir reviews a single project's **source code** against three checklists an LLM builder commonly ships past — 100 checks each:
+
+| Trigger | Reviews for |
+|---|---|
+| `summon mimir to audit security` · `/mimir security` | In-code vulnerability classes: auth, sessions/tokens, access control, injection, XSS, CSRF, input validation, secrets, crypto, API limits, file uploads, logging |
+| `summon mimir to audit performance` · `/mimir performance` | Rendering & re-renders, perceived load, images/fonts, bundles, network/API, caching, database, backend/concurrency |
+| `summon mimir to audit the UI` · `/mimir ui` | Design-system consistency, responsive layout, typography, accessibility, motion, forms, feedback states, navigation, data display |
+
+App audits run against the current project (or a path you name), not the whole machine. They are **review-and-report by default**: Mimir lists findings by severity with the exact fix and writes a report under `~/.config/mimir/reports/`, touching nothing in your project. If you then opt in, Mimir applies the fixes you approve on a dedicated `mimir/<mode>` branch, one commit per fix — your working tree and `main` stay untouched until you review and merge. Security findings are reported first and never auto-rewritten unattended, since a bad fix to auth or crypto can be worse than the flaw.
+
+The checklists live as editable data in `reference/app_checks/`; add or change a check by editing the file.
+
 ## Install
 
 ```bash
@@ -57,7 +71,7 @@ Inside any Claude Code session:
 /mimir
 ```
 
-Or trigger phrases: "summon mimir", "run a security audit", "am I exposed", "what's my risk", "is this safe", "audit my setup".
+Or trigger phrases: "summon mimir", "run a security audit", "am I exposed", "what's my risk", "is this safe", "audit my setup". For project-code review: "summon mimir to audit security / performance / the UI" (or `/mimir security|performance|ui`).
 
 Direct CLI invocation (for cron jobs, CI, terminal use):
 
@@ -119,16 +133,16 @@ Mimir reads `~/.config/mimir/config.json` if it exists, otherwise uses sensible 
 
 ## Hard rules
 
-Mimir will never:
+During the **environment audit**, Mimir will never:
 
-1. Write to disk except via the explicit `--snapshot-baseline` command — and even then, only the tamper baseline file.
+1. Write to disk except via the explicit `--snapshot-baseline` command — and even then, only the tamper baseline file. (The **app audit** writes only a findings report under `~/.config/mimir/reports/` and never edits your project during review; the one path that edits project code is app-audit fix mode, which runs only after you opt in, only on a `mimir/*` branch.)
 2. Auto-rotate credentials — rotation breaks every consumer, only you can sequence that.
 3. Auto-rewrite git history — destructive, forces every collaborator to re-clone.
 4. Auto-PATCH Vercel projects — mistaken toggles can expose internal dashboards.
 5. Auto-change repo visibility — public/private is a deliberate business decision.
 6. Auto-apply `npm audit fix` — major-version bumps can break the build.
 7. Auto-uninstall a skill — risky-pattern flags prompt you to look, not Mimir to verdict.
-8. Modify your settings.json, deny rules, .gitignore files, or anything else — every remediation is reported with the exact command for you to run.
+8. Modify your settings.json, deny rules, .gitignore, or accounts on its own — every environment remediation is reported with the exact command for you to run. (App-audit fix mode is the sole consented exception, and only on a `mimir/*` branch.)
 
 ## Extend
 
