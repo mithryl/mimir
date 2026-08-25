@@ -2,9 +2,10 @@
 
 Loaded when the user invokes **"summon mimir to audit security"** / `/mimir security`.
 
-100 in-code vulnerability classes an LLM builder commonly ships past: authentication,
+104 vulnerability classes an LLM builder commonly ships past: authentication,
 session/token handling, authorization & access control, injection, XSS, CSRF, input
-validation, secrets, crypto, API limits, file uploads, dependencies & logging.
+validation, secrets, crypto, API limits, file uploads, dependencies & logging, and
+edge & origin protection (CDN/WAF bypass).
 
 **Mode is review-and-report.** For each check below, investigate this project's source,
 do NOT edit anything. Record every real finding as: severity, `file:line`, a one-line
@@ -624,3 +625,27 @@ Add structured logging of security-relevant events across my app — logins and 
 *Area: Dependencies, Logging & Monitoring. Why it matters: If untrusted input is written straight into logs, attackers can forge entries or break your logging pipeline; sanitizing log input keeps your records trustworthy.*
 
 Audit how my app writes user-controlled data into logs and protect against log injection. Ensure newline and control characters in user input can't be used to forge fake log entries or split lines, by sanitizing or encoding values before logging and preferring structured logging where each field is recorded distinctly. Confirm that log output rendered in any viewer or dashboard can't execute or mislead, and report where you hardened logging.
+
+### 101. Confirm the edge proxy cannot be bypassed to reach the origin  ·  **severity: critical**
+
+*Area: Edge & Origin Protection. Why it matters: A WAF/CDN like Cloudflare only protects traffic that flows through it. If the origin server's real IP is discoverable, an attacker hits it directly and every WAF rule, DDoS protection, bot filter, and rate limit is bypassed in one step.*
+
+If my app sits behind Cloudflare or another reverse-proxy edge (mark N/A if it is hosted on a managed platform like Vercel/Netlify with no self-managed origin), verify the origin's real IP is not discoverable. Check DNS history services (the pre-proxy IP is a public record if the domain was live before the proxy was added), every subdomain and MX record that may still point straight at the origin, and outbound email headers that can leak the server's IP. Report every discovery path you find; if the origin IP is exposed anywhere, the remediation is to move the origin to a new IP after the other edge checks below are in place, since firewalling alone still confirms the target.
+
+### 102. Restrict origin ingress to the edge proxy's IP ranges  ·  **severity: critical**
+
+*Area: Edge & Origin Protection. Why it matters: An origin that accepts connections from the whole internet undoes the edge layer even when the IP is "secret" — IP scans find it eventually. If a request did not come through the proxy, it should never reach the app.*
+
+If my app has a self-managed origin behind an edge proxy (N/A on managed platforms), audit the origin's firewall and server config: ingress on 80/443 must be allowlisted to the proxy's published IP ranges (Cloudflare publishes theirs at cloudflare.com/ips) and everything else dropped. Check for listeners on other ports that expose the app or admin surfaces directly. Where the config lives in the repo (Terraform, Docker/compose, nginx/Caddy config, cloud firewall rules), point at the exact file and the missing restriction; where it lives only on the server, report the verification command to run.
+
+### 103. Encrypt proxy-to-origin traffic end to end  ·  **severity: high**
+
+*Area: Edge & Origin Protection. Why it matters: Cloudflare's "Flexible" SSL mode encrypts the browser-to-edge hop but sends edge-to-origin traffic in plain text, so anyone on the path between the proxy and the origin reads sessions, credentials, and data in the clear while the padlock still shows.*
+
+If my app is behind Cloudflare or a similar edge (N/A on managed platforms), verify the SSL/TLS mode is Full (strict) — never Flexible or bare Full — and that the origin serves a certificate the proxy validates (a Cloudflare origin certificate or a publicly trusted one). Check that the origin refuses plain-HTTP app traffic rather than serving it as a fallback. Report the current mode if it is discoverable from config in the repo, or the exact dashboard/API check to run if it is not.
+
+### 104. Trust proxy-derived client IPs only from the proxy  ·  **severity: high**
+
+*Area: Edge & Origin Protection. Why it matters: Headers like CF-Connecting-IP and X-Forwarded-For are attacker-controlled unless the connection provably came from the proxy; code that trusts them blindly lets an attacker spoof any IP to defeat rate limits, bans, allowlists, and audit logs.*
+
+Audit everywhere my app reads the client IP (rate limiting, lockouts, allowlists, geo checks, audit logging). If it reads CF-Connecting-IP, X-Forwarded-For, or X-Real-IP, verify the value is only trusted when the request demonstrably arrived from the edge proxy (origin ingress locked to proxy ranges per check 102, or the framework's trusted-proxy setting configured with the proxy's ranges — not `trust proxy = true` for everything). Flag any handler that takes the first hop of X-Forwarded-For at face value, and fix by resolving the client IP through the trusted-proxy mechanism my framework provides.
