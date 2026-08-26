@@ -2,10 +2,15 @@
 
 Loaded when the user invokes **"summon mimir to audit security"** / `/mimir security`.
 
-104 vulnerability classes an LLM builder commonly ships past: authentication,
-session/token handling, authorization & access control, injection, XSS, CSRF, input
-validation, secrets, crypto, API limits, file uploads, dependencies & logging, and
-edge & origin protection (CDN/WAF bypass).
+109 vulnerability classes an LLM builder commonly ships past: authentication,
+session/token handling, authorization & access control (including database row-level
+security), injection, XSS, CSRF, input validation, secrets, crypto, API limits, file
+uploads, dependencies & logging, CI supply chain, and edge & origin protection
+(CDN/WAF bypass).
+
+**Never assume a framework or platform default satisfies a check** — verify it in this
+repo's code and config. "Next.js probably handles that" is not a pass. If you cannot
+find evidence either way, record the check as UNKNOWN (see SKILL.md), not as a pass.
 
 **Mode is review-and-report.** For each check below, investigate this project's source,
 do NOT edit anything. Record every real finding as: severity, `file:line`, a one-line
@@ -64,7 +69,7 @@ Check how my app handles sessions during authentication and fix any session fixa
 
 *Area: Authentication. Why it matters: A second factor means a stolen password alone is no longer enough to take over an account, dramatically reducing account-takeover risk.*
 
-Add support for time-based one-time-password (TOTP) multi-factor authentication that works with standard authenticator apps. Implement secure secret generation and storage, QR-code provisioning, verification during login, and a set of single-use recovery codes stored hashed for when a user loses their device. Make MFA opt-in per user without breaking existing accounts, and rate-limit verification attempts. Explain how a user would enroll and how the verification step fits into my existing login flow.
+Add support for time-based one-time-password (TOTP) multi-factor authentication that works with standard authenticator apps. Implement secure secret generation and storage, QR-code provisioning, verification during login, and a set of single-use recovery codes stored hashed for when a user loses their device. Make MFA opt-in per user without breaking existing accounts, require it (not just offer it) for admin and other privileged accounts, and rate-limit verification attempts. Explain how a user would enroll and how the verification step fits into my existing login flow.
 
 ### 9. Compare credentials in constant time  ·  **severity: high**
 
@@ -618,7 +623,7 @@ Audit my app for third-party scripts and stylesheets loaded from external source
 
 *Area: Dependencies, Logging & Monitoring. Why it matters: You can't respond to an attack you can't see; recording key security events gives you the visibility to detect and investigate suspicious activity.*
 
-Add structured logging of security-relevant events across my app — logins and failures, logout, password and permission changes, access-control denials, and other sensitive actions. Capture useful context like timestamp, the acting user, and source, while deliberately excluding secrets and sensitive personal data from the logs. Make the logs consistent and queryable so suspicious patterns can be spotted, and tell me which events are now being recorded.
+Add structured logging of security-relevant events across my app — logins and failures, logout, password and permission changes, access-control denials, and other sensitive actions. Capture useful context like timestamp, the acting user, and source, while deliberately excluding secrets and sensitive personal data from the logs. For admin and privileged changes specifically, keep an audit trail recording actor, action, target, and timestamp. Make the logs consistent and queryable so suspicious patterns can be spotted, and tell me which events are now being recorded.
 
 ### 100. Prevent log injection and forgery  ·  **severity: medium**
 
@@ -649,3 +654,51 @@ If my app is behind Cloudflare or a similar edge (N/A on managed platforms), ver
 *Area: Edge & Origin Protection. Why it matters: Headers like CF-Connecting-IP and X-Forwarded-For are attacker-controlled unless the connection provably came from the proxy; code that trusts them blindly lets an attacker spoof any IP to defeat rate limits, bans, allowlists, and audit logs.*
 
 Audit everywhere my app reads the client IP (rate limiting, lockouts, allowlists, geo checks, audit logging). If it reads CF-Connecting-IP, X-Forwarded-For, or X-Real-IP, verify the value is only trusted when the request demonstrably arrived from the edge proxy (origin ingress locked to proxy ranges per check 102, or the framework's trusted-proxy setting configured with the proxy's ranges — not `trust proxy = true` for everything). Flag any handler that takes the first hop of X-Forwarded-For at face value, and fix by resolving the client IP through the trusted-proxy mechanism my framework provides.
+
+### 105. Enforce row security at the database layer  ·  **severity: critical**
+
+*Area: Authorization & Access Control. Why it matters: App-layer ownership checks vanish the moment anyone queries the database another way — a second service, a script, an SQL injection foothold, or a leaked anon key. Row-level security makes the database itself refuse to serve another user's rows.*
+
+If my app uses a database with row-level security support (Postgres, Supabase — mark N/A otherwise), verify RLS is enabled on every table holding user, customer, financial, or private operational data, with policies that enforce user or tenant ownership rather than merely being enabled. Audit every SECURITY DEFINER function, view, and RPC for paths that bypass RLS with caller-controlled input. Verify the app connects with a scoped, least-privilege key (Supabase anon key with RLS, or a dedicated role) — never the service-role key or a superuser — and that any service-role usage is server-side only and deliberate. Report each unprotected table and bypass path.
+
+> **Dedup note:** a service-role key committed to git or shipped in a client bundle belongs to the secrets checks (66-68) and Mimir's environment audit; this check owns whether the database itself enforces ownership.
+
+### 106. Ship no sourcemaps or readable bundles to production  ·  **severity: high**
+
+*Area: Secrets & Configuration. Why it matters: Public sourcemaps hand an attacker your original source — comments, internal URLs, logic, and any secret that slipped into frontend code — and unminified bundles are nearly as readable. The build artifact is what ships, so the build artifact is what must be checked.*
+
+Inspect the production build configuration and, where possible, the built artifact itself — not just the source. Verify no `.map` files are publicly served, no `sourceMappingURL` references point at reachable maps, and bundles are minified. If sourcemaps are needed for error monitoring, confirm they upload privately to that service and are excluded from the deploy. Check the deploy config (Vercel/Netlify settings, webpack/Vite `devtool`/`sourcemap` options, CI upload steps) and report exactly where maps would leak.
+
+### 107. Harden CI installs against supply-chain drift  ·  **severity: medium**
+
+*Area: Dependencies, Logging & Monitoring. Why it matters: A CI job that runs `npm install` resolves versions at build time, so a malicious release published minutes ago can ride straight into your deploy; the same applies to a third-party GitHub Action referenced by a mutable version tag.*
+
+Audit the CI/CD workflow files. Verify dependency installs use the lockfile exactly — `npm ci`, `pnpm install --frozen-lockfile`, `yarn --immutable`, `pip install` from a pinned requirements/lock file — never a bare install that can drift. Verify third-party GitHub Actions (anything not `actions/*` from GitHub itself, and ideally those too) are pinned to full commit SHAs, not version tags that an attacker who compromises the action repo can move. Report each workflow step that installs loosely or references a mutable tag.
+
+> **Dedup note:** the committed-lockfile requirement itself is check 97, and vulnerable-dependency scanning defers to Mimir's environment audit; this check owns how CI consumes them.
+
+### 108. Prevent dependency-confusion package shadowing  ·  **severity: medium**
+
+*Area: Dependencies, Logging & Monitoring. Why it matters: If an internal package name is unscoped and unclaimed on the public registry, an attacker can publish a package with that name and a higher version — and a default-configured install will prefer the public imposter, executing its install scripts in your build.*
+
+If my project consumes internal or private packages (mark N/A if every dependency is public), verify their names are scoped (`@org/name`) with the scope owned by us on the public registry, and that registry configuration (`.npmrc` or equivalent) explicitly maps the private scope to the private registry so the names can never resolve publicly. Flag any unscoped internal package name, and check install scripts aren't implicitly trusted from registries that don't need them.
+
+### 109. Require email verification before sensitive actions  ·  **severity: medium**
+
+*Area: Authentication. Why it matters: An account on an unverified email can be created with someone else's address; letting it act — posting, paying, inviting, receiving password resets — turns typos and pre-registration attacks into account access and spam vectors.*
+
+Verify the app gates sensitive actions on a verified email address: check the verification flag server-side before payments, posting public content, sending invitations, or changing security settings — not just at signup in the UI. Confirm changing the account email requires re-verification of the new address (and notifies the old one), and that verification tokens follow the same hygiene as reset tokens (check 7). Report each sensitive action reachable by an unverified account.
+
+---
+
+## Ask the user — real risks not scorable from the repo
+
+These matter but cannot be verified by reading code. After presenting findings, list whichever apply as open questions for the user; do not score them or count them in the tally:
+
+- Automated backups running, and a restore actually tested (a backup that has never been restored is a hope, not a backup)
+- Billing and spend alerts on every metered service
+- Registrar and DNS provider accounts on 2FA, domain transfer lock enabled
+- CAA records set; no dangling DNS records pointing at deprovisioned services (subdomain takeover)
+- WAF or edge protection actually in front of the app (and see checks 101-104 for whether it can be bypassed)
+- Admin surfaces IP-allowlisted or behind a VPN where practical
+- A pen test or independent security review in the last 12 months
