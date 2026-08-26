@@ -40,11 +40,11 @@ Either way, you'll see a prioritized findings report. Mimir is **read-only** —
 
 ## App audits (project code)
 
-Beyond the machine/account audit above, Mimir reviews a single project's **source code** against three checklists an LLM builder commonly ships past — 100 checks each:
+Beyond the machine/account audit above, Mimir reviews a single project's **source code** against three checklists an LLM builder commonly ships past — roughly 100 checks each:
 
 | Trigger | Reviews for |
 |---|---|
-| `summon mimir to audit security` · `/mimir security` | In-code vulnerability classes: auth, sessions/tokens, access control, injection, XSS, CSRF, input validation, secrets, crypto, API limits, file uploads, logging |
+| `summon mimir to audit security` · `/mimir security` | In-code vulnerability classes: auth, sessions/tokens, access control, injection, XSS, CSRF, input validation, secrets, crypto, API limits, file uploads, logging, edge & origin protection (CDN/WAF bypass) |
 | `summon mimir to audit performance` · `/mimir performance` | Rendering & re-renders, perceived load, images/fonts, bundles, network/API, caching, database, backend/concurrency |
 | `summon mimir to audit the UI` · `/mimir ui` | Design-system consistency, responsive layout, typography, accessibility, motion, forms, feedback states, navigation, data display |
 
