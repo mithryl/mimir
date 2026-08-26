@@ -2,7 +2,7 @@
 
 Loaded when the user invokes **"summon mimir to audit performance"** / `/mimir performance`.
 
-100 performance issues an LLM builder commonly leaves behind: rendering & re-renders,
+101 performance issues an LLM builder commonly leaves behind: rendering & re-renders,
 perceived-load UX, images/fonts/media, JS bundles & build, network & API efficiency,
 caching, database & data layer, backend/server/concurrency, and measurement.
 
@@ -524,7 +524,7 @@ Check whether my database queries can run unbounded, risking a single slow query
 
 *Area: Backend, Server & Concurrency. Why it matters: Making users wait through emails, image processing, or exports inside the request makes the app feel frozen.*
 
-Identify slow or non-essential work done synchronously inside request handling (sending emails, processing images/files, generating exports, calling slow third parties). Move it to a background job queue so the request returns quickly while the work runs asynchronously, with status tracking or notifications as needed. Ensure jobs are retryable and idempotent. Verify the user-facing requests return fast and the deferred work completes reliably out of band.
+Identify slow or non-essential work done synchronously inside request handling (sending emails, processing images/files, generating exports, calling slow third parties). Move it to a background job queue so the request returns quickly while the work runs asynchronously, with status tracking or notifications as needed. Ensure jobs are retryable and idempotent, and deduplicate at enqueue time: before creating a new job, check for an identical pending or processing job for the same user and inputs, and return the existing job's identifier instead of enqueuing a duplicate (a double-clicked "export" button should produce one job, not two). Verify the user-facing requests return fast and the deferred work completes reliably out of band.
 
 ### 86. Stream large responses instead of buffering  ·  **severity: high**
 
@@ -615,3 +615,9 @@ Measure Interaction to Next Paint and find the interactions with the worst respo
 *Area: Measurement, Monitoring & Budgets. Why it matters: Without an automated guardrail, speed quietly erodes as features pile up over time.*
 
 Establish performance budgets for key metrics (bundle size, LCP, total page weight, request counts) based on my current baseline and targets. Wire them into CI so a build that regresses past the budget fails or flags a warning, preventing silent performance erosion as the app grows. Set realistic thresholds and clear failure messages. Verify the check runs on each change and actually catches regressions before they ship.
+
+### 101. Keep request handlers inside platform timeout limits  ·  **severity: high**
+
+*Area: Backend, Server & Concurrency. Why it matters: A handler that outlives the platform's request timeout doesn't just feel slow — it dies mid-work, the user sees a failure, retries, and the half-finished work runs again, producing duplicates and wasted compute.*
+
+Determine the hard request-duration limit my deployment platform enforces (serverless function max duration, gateway timeout, proxy timeout), then audit request handlers for work whose runtime scales with data size — report and PDF generation, bulk exports, batch imports, mass emails, large third-party syncs. Flag any handler that can plausibly exceed the limit as its data grows, even if it passes today with small datasets. For each, apply the async job pattern from check 85: create a job record, return the job identifier immediately, and let a background worker do the heavy lifting. Verify no user-triggered endpoint can hit the platform timeout and that previously long-running actions now respond immediately with a trackable job.
